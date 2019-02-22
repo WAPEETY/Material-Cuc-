@@ -25,6 +25,8 @@
 #define LIGHT_GRAY 0xC618
 #define INDIGO  0x3A96
 
+#define MAX_LENGTH_TITLE 46
+
 #define rxPin 0
 #define txPin 1
 
@@ -33,14 +35,36 @@ TouchScreen ts = TouchScreen(XP, YP, XM, YM, 364);
 
 RTC_DS1307 rtc;
 
-  unsigned long time;
-  unsigned long secondi;
-  unsigned long minuti;
-  unsigned long ore;
-  unsigned long giorni;
-  char c = 'N';
-  String comando = "SALVAMI SULL'SD, CESSO<";
-  bool unix = false;
+unsigned long time;
+unsigned long secondi;
+unsigned long minuti;
+unsigned long ore;
+unsigned long giorni;
+char c = 'N';
+String comando = "SALVAMI SULL'SD, CESSO<";
+bool unix = false;
+
+/* this array contains the received data from the bluetooth socket */
+const char custom_title[MAX_LENGTH_TITLE] = "\0";
+
+struct alarm {
+	/* this record keeps clean the alarms */
+	int hour;
+	int minute;
+};
+
+struct alarm_holder {
+	alarm alarm0;
+	alarm alarm1;
+	alarm alarm2;
+} *alarms;
+
+struct _current_time {
+	/* used only once, but still makes the code more readable */
+	int hour;
+	int minute;
+	int second;
+} *current_time;
 
 void setup(void){
   Serial.begin(9600);
@@ -103,13 +127,37 @@ void setup(void){
 void loop() {
   DateTime now = rtc.now();
     if(Serial.available()) {
-      comando="";
-      do {
-        if(Serial.available()) {
-          c = Serial.read();
-          comando += c;
-        }
-    } while(c != '<');
+			/* the data is received as such:
+			 * [ byte_current_hour][byte_current_minute][byte_current_second]
+			 * [ byte_alarm0_hour ][byte_alarm0_minute ][byte_alarm1_hour   ]
+			 * [byte_alarm1_minute][byte_alarm2_hour   ][byte_alarm2_minute ]
+			 */
+
+			/* get the current time */
+			char current_byte;
+			memset(custom_title, '\0', sizeof(custom_title));
+			for (int i = 0; i < 3; i++) {
+				/* read the current time */
+				current_byte = Serial.read();
+				*current_time = ((int) current_byte);
+				current_time++;
+			}
+
+			/* get the alarms */
+			for (int i = 0; i < 3; i++) {
+				current_byte = Serial.read();
+				*alarms.hour = ((int) current_byte);
+				current_byte = Serial.read();
+				*alarms.minute = ((int) current_byte);
+				alarm_holder += sizeof (alarm);
+			}
+
+			current_byte = 'x';
+			
+			for (int i = 0; i < MAX_LENGTH_TITLE && current_byte != '\0'; i++) {
+				current_byte = Serial.read();
+				custom_title[i] = current_byte;
+			}
     }
   tft.setCursor(10,10);
   if (unix == false){
@@ -140,7 +188,7 @@ void loop() {
     tft.print("    CONNECTED");
   else if (comando == "NO<"){
     tft.print("NOT CONNECTED");
- }
+	}
   tft.setTextColor(WHITE, LIGHT_GRAY);
   tft.setTextSize(7);
   tft.setCursor(60, 75);
